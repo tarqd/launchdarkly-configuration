@@ -1,0 +1,106 @@
+# Illustrative only — NOT NORMATIVE.
+#
+# This file shows the document shape implied by spec/DECISIONS.md so the design can be
+# sanity-checked before the specification and JSON Schema are written. Property names,
+# groupings, and default values will change as SDKCONF is drafted. Canonical defaults are
+# derived from the Go SDK, falling back to Java then Python (decision 14); the values shown
+# here have not yet been through that pass.
+
+# Required. MINOR newer than the SDK understands warns; MAJOR mismatch is an error.
+file_format: "0.1"
+
+# Marked `sensitive` in the schema: redacted from errors, diagnostics, and validator output.
+# Prefer substitution or the _file form over a literal.
+sdk_key: ${LAUNCHDARKLY_SDK_KEY}
+# sdk_key_file: /run/secrets/launchdarkly-sdk-key
+
+offline: false
+start_wait_ms: 5000
+
+application:
+  id: checkout-service
+  version: ${GIT_SHA}
+
+# Authoritative for every data source that does not override them. An SDK MUST fall back to
+# these when a source omits its own endpoint — this is what Go and Ruby get wrong under FDv2
+# today. Specifying some but not all endpoints is an error, not a warn-and-default.
+endpoints:
+  polling: https://app.launchdarkly.com
+  streaming: https://stream.launchdarkly.com
+  events: https://events.launchdarkly.com
+  # Shorthand that sets all three, for Relay Proxy deployments:
+  # relay_proxy: https://relay.internal.example.com
+
+# The FDv2 data system is the primary shape: ordered initializers, then ordered synchronizers.
+# Roles are modelled, not types (Java has distinct Initializer/Synchronizer types; .NET reuses
+# IDataSource). Legacy `stream` / `poll_interval` / `use_ldd` / `persistent_store` exist as
+# deprecated top-level aliases mapped onto this tree, and are mutually exclusive with it.
+data_system:
+  initializers:
+    - type: polling
+  synchronizers:
+    - type: streaming
+      initial_reconnect_delay_ms: 1000
+    - type: polling
+      poll_interval_ms: 30000
+  persistent_store:
+    type: redis
+    url: redis://localhost:6379
+    prefix: launchdarkly
+    # An explicit mode rather than the negative-duration sentinel Java/.NET/C++ use internally.
+    cache:
+      mode: ttl # off | ttl | infinite
+      ttl_ms: 15000
+
+events:
+  enabled: true
+  capacity: 10000
+  flush_interval_ms: 5000
+  all_attributes_private: false
+  # Attribute *references*, not plain names — leading slash, with ~0/~1 escaping.
+  private_attributes:
+    - /email
+    - /address/street
+  context_keys_capacity: 1000
+  context_keys_flush_interval_ms: 300000
+  compress: false
+  diagnostics:
+    enabled: true
+    recording_interval_ms: 900000
+
+http:
+  connect_timeout_ms: 3000
+  socket_timeout_ms: 10000
+  proxy:
+    url: http://proxy.internal.example.com:3128
+  tls:
+    ca_file: /etc/ssl/certs/corp-ca.pem
+  headers:
+    X-Corp-Trace: enabled
+
+big_segments:
+  store:
+    type: redis
+    url: redis://localhost:6379
+    prefix: launchdarkly
+  context_cache_size: 1000
+  context_cache_ttl_ms: 5000
+  status_poll_interval_ms: 5000
+  stale_after_ms: 120000
+
+logging:
+  level: info # Rust has no logging configuration; it warns once and ignores this.
+
+# Only first-party `type` values are enumerated in v1. An unrecognised `type` parses
+# successfully and warns at create time — there is no open provider registry yet.
+hooks:
+  - type: tracing
+    include_value: false
+
+plugins:
+  - type: observability
+
+# OTEL_* environment variables are deliberately NOT restated here. They belong to the
+# OpenTelemetry SDK, and the "a file replaces environment configuration" rule is scoped to
+# LAUNCHDARKLY_* / LD_* only — otherwise loading this file would silently disable a
+# customer's configured OTLP endpoint.
