@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "description": "An unknown top-level property is rejected",
+      "document": {"file_format": "0.1", "ofline": true},
+      "expect": {"error": {"kind": "unknown_property", "pointer": "/ofline"}}
+    },
+    {
+      "description": "An unknown property inside a group is rejected",
+      "document": {"file_format": "0.1", "events": {"capacty": 100}},
+      "expect": {"error": {"kind": "unknown_property", "pointer": "/events/capacty"}}
+    },
+    {
+      "description": "A missing file_format is rejected",
+      "document": {"offline": true},
+      "expect": {"error": {"kind": "missing_required_property", "pointer": "/file_format"}}
+    },
+    {
+      "description": "A poll interval below the 30s minimum is rejected rather than raised",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {"synchronizers": [{"type": "polling", "poll_interval_ms": 5000}]}
+      },
+      "expect": {"error": {"kind": "out_of_range", "pointer": "/data_system/synchronizers/0/poll_interval_ms"}}
+    },
+    {
+      "description": "A diagnostic recording interval below the 60s minimum is rejected",
+      "document": {"file_format": "0.1", "events": {"diagnostic_recording_interval_ms": 1000}},
+      "expect": {"error": {"kind": "out_of_range", "pointer": "/events/diagnostic_recording_interval_ms"}}
+    },
+    {
+      "description": "A zero event capacity is rejected",
+      "document": {"file_format": "0.1", "events": {"capacity": 0}},
+      "expect": {"error": {"kind": "out_of_range", "pointer": "/events/capacity"}}
+    },
+    {
+      "description": "A duration given as a string is rejected",
+      "document": {"file_format": "0.1", "events": {"flush_interval_ms": "5s"}},
+      "expect": {"error": {"kind": "wrong_type", "pointer": "/events/flush_interval_ms"}}
+    },
+    {
+      "description": "An application id with characters outside [A-Za-z0-9._-] is rejected",
+      "document": {"file_format": "0.1", "application_info": {"id": "checkout service"}},
+      "expect": {"error": {"kind": "pattern_mismatch", "pointer": "/application_info/id"}}
+    },
+    {
+      "description": "An unrecognized log level is rejected",
+      "document": {"file_format": "0.1", "logging": {"min_level": "trace"}},
+      "expect": {"error": {"kind": "not_in_enum", "pointer": "/logging/min_level"}}
+    },
+    {
+      "description": "A DynamoDB data store without a table name is rejected",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {"data_store": {"type": "dynamodb"}}
+      },
+      "expect": {"error": {"kind": "missing_required_property", "pointer": "/data_system/data_store/table_name"}}
+    },
+    {
+      "description": "An in-memory data store may not carry a cache",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {"data_store": {"type": "in_memory", "cache": {"mode": "off"}}}
+      },
+      "expect": {"error": {"kind": "unknown_property", "pointer": "/data_system/data_store/cache"}}
+    },
+    {
+      "description": "A file data source without paths is rejected",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {"initializers": [{"type": "file"}]}
+      },
+      "expect": {"error": {"kind": "missing_required_property", "pointer": "/data_system/initializers/0/paths"}}
+    },
+    {
+      "description": "A negative log data source outage threshold is rejected",
+      "document": {"file_format": "0.1", "logging": {"log_data_source_outage_as_error_after_ms": -1}},
+      "expect": {"error": {"kind": "out_of_range", "pointer": "/logging/log_data_source_outage_as_error_after_ms"}}
+    }
+  ]
+}

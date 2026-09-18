@@ -1,0 +1,123 @@
+# Illustrative only — NOT NORMATIVE.
+#
+# Shows the document shape implied by spec/DECISIONS.md, with every property name derived from
+# the Go SDK's public API per spec/NAMING.md. Default values shown are Go's actuals where Go has
+# the option; they still need a full per-property pass.
+
+# Required. MINOR newer than the SDK understands warns; MAJOR mismatch is an error.
+file_format: "0.1"
+
+# Marked `sensitive` in the schema: redacted from errors, diagnostics, and validator output.
+# Prefer substitution or the _file form over a literal.
+sdk_key: ${LAUNCHDARKLY_SDK_KEY}
+# sdk_key_file: /run/secrets/launchdarkly-sdk-key
+
+offline: false
+
+# Go passes this to MakeCustomClient rather than holding it in Config, so the name comes from
+# Java's startWait. Go, Python, and Ruby need new API for it to be settable from a document.
+start_wait_ms: 5000
+
+# Root-level because that is where Go's Config.DiagnosticOptOut lives, even though
+# events.diagnostic_recording_interval_ms sits on the events builder. See NAMING.md.
+diagnostic_opt_out: false
+
+application_info:
+  id: checkout-service
+  version: ${GIT_SHA}
+
+# Authoritative for every data source that does not override them. An SDK MUST fall back to
+# these when a source omits its own — this is what Go and Ruby get wrong under FDv2 today.
+# Specifying some but not all is an error unless allow_partial_specification is set.
+service_endpoints:
+  streaming: https://stream.launchdarkly.com
+  polling: https://app.launchdarkly.com
+  events: https://events.launchdarkly.com
+  allow_partial_specification: false
+  # Shorthand that sets all three, for Relay Proxy deployments:
+  # relay_proxy: https://relay.internal.example.com
+
+# Ordered initializers, then ordered synchronizers. Roles are modelled, not types — Java has
+# distinct Initializer/Synchronizer types while .NET reuses IDataSource. Legacy top-level
+# stream / poll_interval / use_ldd / persistent_store are deprecated aliases onto this tree and
+# are mutually exclusive with it.
+data_system:
+  initializers:
+    - type: polling
+  synchronizers:
+    - type: streaming
+      initial_reconnect_delay_ms: 1000
+    - type: polling
+      poll_interval_ms: 30000
+  fdv1_compatible_synchronizer:
+    type: polling
+  data_store:
+    mode: read_write # read | read_write
+    type: redis
+    url: redis://localhost:6379
+    prefix: launchdarkly
+    # Explicit mode instead of Go's internal sentinels, where CacheForever is -1ms and
+    # NoCaching is 0 — a non-negative duration constraint would otherwise reject "forever".
+    cache:
+      mode: time # time | forever | off
+      time_ms: 15000
+
+events:
+  enabled: true
+  capacity: 10000
+  flush_interval_ms: 5000
+  all_attributes_private: false
+  # Attribute *references*, not plain names — leading slash, with ~0/~1 escaping.
+  private_attributes:
+    - /email
+    - /address/street
+  context_keys_capacity: 1000
+  context_keys_flush_interval_ms: 300000
+  omit_anonymous_contexts: false
+  enable_gzip: false
+  diagnostic_recording_interval_ms: 900000
+
+# Flat, because Go's HTTPConfiguration is flat — no nested proxy or tls objects.
+http:
+  connect_timeout_ms: 3000
+  # Go has no separate read timeout; this name comes from Java's socketTimeout.
+  socket_timeout_ms: 10000
+  proxy_url: http://proxy.internal.example.com:3128
+  # Expressible as data in Go and Python only; nine SDKs would need new API.
+  ca_cert_file: /etc/ssl/certs/corp-ca.pem
+  # Go permits overriding Authorization and User-Agent here, which makes this security-relevant.
+  headers:
+    X-Corp-Trace: enabled
+
+big_segments:
+  store:
+    type: redis
+    url: redis://localhost:6379
+    prefix: launchdarkly
+  context_cache_size: 1000
+  context_cache_time_ms: 5000
+  status_poll_interval_ms: 5000
+  stale_after_ms: 120000
+
+logging:
+  enabled: true
+  min_level: info # Rust has no logging configuration; it warns once and ignores this group.
+  log_evaluation_errors: false
+  log_context_key_in_errors: false
+  log_data_source_outage_as_error_after_ms: 60000
+
+# Only first-party `type` values are enumerated in v1. An unrecognised `type` parses
+# successfully and warns at create time — there is no open provider registry yet.
+hooks:
+  - type: tracing
+    # Both are opt-in options in Go (ldotel.WithSpans/WithValue), so both default to false.
+    spans: true
+    value: false
+
+plugins:
+  - type: observability
+
+# OTEL_* environment variables are deliberately NOT restated here. They belong to the
+# OpenTelemetry SDK, and the "a file replaces environment configuration" rule is scoped to
+# LAUNCHDARKLY_* / LD_* only — otherwise loading this file would silently disable a
+# customer's configured OTLP endpoint.
