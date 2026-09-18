@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "description": "The minimal document is a file_format alone",
+      "document": {"file_format": "0.1"},
+      "expect": {"valid": true}
+    },
+    {
+      "description": "An SDK key supplied by substitution",
+      "document": {"file_format": "0.1", "sdk_key": "${LAUNCHDARKLY_SDK_KEY}"},
+      "env": {"LAUNCHDARKLY_SDK_KEY": "sdk-00000000-0000-4000-8000-000000000000"},
+      "expect": {"valid": true}
+    },
+    {
+      "description": "A Relay Proxy deployment in daemon mode",
+      "document": {
+        "file_format": "0.1",
+        "service_endpoints": {"relay_proxy": "https://relay.internal.example.com"},
+        "data_system": {
+          "synchronizers": [],
+          "data_store": {"type": "redis", "url": "redis://localhost:6379", "mode": "read"}
+        }
+      },
+      "expect": {"valid": true}
+    },
+    {
+      "description": "A file data source used as an initializer",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {
+          "initializers": [{"type": "file", "paths": ["flags.json"], "duplicate_keys_handling": "ignore"}],
+          "synchronizers": []
+        }
+      },
+      "expect": {"valid": true}
+    },
+    {
+      "description": "Cache forever is a mode rather than a negative duration",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {"data_store": {"type": "redis", "cache": {"mode": "forever"}}}
+      },
+      "expect": {"valid": true}
+    },
+    {
+      "description": "Big segments use a store separate from the data store",
+      "document": {
+        "file_format": "0.1",
+        "data_system": {"data_store": {"type": "redis", "url": "redis://data:6379"}},
+        "big_segments": {"store": {"type": "redis", "url": "redis://segments:6379"}}
+      },
+      "expect": {"valid": true}
+    },
+    {
+      "description": "Private attributes are attribute references",
+      "document": {
+        "file_format": "0.1",
+        "events": {"private_attributes": ["/email", "/address/street", "name"]}
+      },
+      "expect": {"valid": true}
+    }
+  ]
+}

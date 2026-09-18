@@ -81,7 +81,7 @@ From `Config.DataSystem` / `ldcomponents.DataSystem()`.
 |---|---|---|
 | `streaming` | `ldcomponents.StreamingDataSourceV2()` | `initial_reconnect_delay_ms` (`InitialReconnectDelay`), `base_uri` (`BaseURI`) |
 | `polling` | `ldcomponents.PollingDataSourceV2()` | `poll_interval_ms` (`PollInterval`), `base_uri` |
-| `file` | `ldfiledatav2.DataSource()` | `file_paths` (`FilePaths`), `duplicate_keys_handling` (`DuplicateKeysHandling`, values `fail`/`ignore`), `auto_update` |
+| `file` | `ldfiledatav2.DataSource()` | `paths` (`FilePaths`, stutter rule), `duplicate_keys_handling` (`DuplicateKeysHandling`, values `fail`/`ignore`), `auto_update` |
 
 `auto_update` is the one invented name here: Go models file watching as
 `.Reloader(ldfilewatch.WatchFiles)`, a function, but `ldfilewatch.WatchFiles` is the only
@@ -91,7 +91,7 @@ implementation that exists, so the capability is a boolean in practice.
 builders (logs "Payload filtering is not supported with the FDv2 data system"), and .NET never
 had it at all.
 
-### `persistent_store`
+### `data_store`
 
 From `ldcomponents.PersistentDataStore(impl)` plus the integration packages.
 
@@ -170,7 +170,7 @@ From `ldcomponents.BigSegments(store)`.
 | `status_poll_interval_ms` | `.StatusPollInterval(d)` |
 | `stale_after_ms` | `.StaleAfter(d)` |
 
-Configured separately from `data_system.persistent_store` and may point at a different database.
+Configured separately from `data_system.data_store` and may point at a different database.
 Consul is not supported as a big-segment store in any SDK.
 
 ## `hooks`
@@ -183,14 +183,23 @@ Consul is not supported as a big-segment store in any SDK.
 
 ## Three places the rule produces something awkward
 
-Flagging these rather than quietly smoothing them over:
+These were reviewed and **kept as Go dictates**. Recorded here so the next reader knows they were
+a choice rather than an oversight.
 
 1. **`diagnostic_opt_out` at the root, `events.diagnostic_recording_interval_ms` under events.**
-   Go splits them that way, so rule 1 keeps the split. It reads oddly in a document where the two
-   sit in different groups, and it is a double negative in a format that otherwise uses positive
-   booleans. The alternative is `events.diagnostics: {enabled, recording_interval_ms}`.
-2. **`service_endpoints` rather than `endpoints`.** Faithful to `Config.ServiceEndpoints`, but
-   "service" carries no information in a config file that only ever describes one service.
-3. **`application_info` rather than `application`.** `_info` is an artifact of Go needing a
-   struct type name. Rule 3 already strips the stutter from the fields; the group name could take
-   the same treatment.
+   Go splits them that way (`Config.DiagnosticOptOut` against
+   `SendEvents().DiagnosticRecordingInterval()`), so rule 1 keeps the split. Two related settings
+   land in different groups, and it is a double negative in a format that otherwise uses positive
+   booleans. The alternative considered was `events.diagnostics: {enabled, recording_interval_ms}`.
+2. **`service_endpoints` rather than `endpoints`.** Faithful to `Config.ServiceEndpoints`, though
+   "service" carries no information in a document that only ever describes one.
+3. **`application_info` rather than `application`.** `_info` is an artifact of Go needing a struct
+   type name. Rule 3 already strips the stutter from the fields, so the group name could have
+   taken the same treatment.
+
+## One invented name
+
+`auto_update` on the `file` data source has no Go equivalent to transliterate. Go models file
+watching as `.Reloader(ldfilewatch.WatchFiles)` — a function — but `ldfilewatch.WatchFiles` is the
+only implementation that exists, so the capability is a boolean in practice. This is the only
+property in the schema whose name is not derived from an existing SDK.

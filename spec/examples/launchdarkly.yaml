@@ -110,6 +110,7 @@ logging:
 # successfully and warns at create time — there is no open provider registry yet.
 hooks:
   - type: tracing
+    # Both are opt-in options in Go (ldotel.WithSpans/WithValue), so both default to false.
     spans: true
     value: false
 

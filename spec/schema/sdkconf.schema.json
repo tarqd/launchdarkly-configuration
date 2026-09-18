@@ -1,0 +1,855 @@
+{
+  "$defs": {
+    "ApplicationInfo": {
+      "additionalProperties": false,
+      "description": "Emitted as the X-LaunchDarkly-Tags request header. Go supports only these two fields;\n.NET's name and version_name fall through Go -> Java -> Python and land nowhere, so they\nare not part of v1.",
+      "properties": {
+        "id": {
+          "description": "Application identifier. At most 64 characters from [A-Za-z0-9._-].",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$",
+          "type": "string"
+        },
+        "version": {
+          "description": "Application version. Same character restrictions as id.",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BigSegments": {
+      "additionalProperties": false,
+      "description": "Configured separately from data_system.data_store and may point at a different database.\nConsul is not supported as a big segment store by any SDK. Rust does not implement big\nsegments at all.",
+      "properties": {
+        "context_cache_size": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 1000,
+          "description": "Number of context membership results cached in memory."
+        },
+        "context_cache_time_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 5000
+        },
+        "stale_after_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 120000,
+          "description": "Treat store data as stale once its last-updated timestamp is older than this."
+        },
+        "status_poll_interval_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 5000,
+          "description": "How often to poll the store for its last-updated timestamp."
+        },
+        "store": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RedisStore"
+            },
+            {
+              "$ref": "#/$defs/DynamoDbStore"
+            }
+          ]
+        }
+      },
+      "required": [
+        "store"
+      ],
+      "type": "object"
+    },
+    "Cache": {
+      "additionalProperties": false,
+      "description": "An explicit mode rather than Go's internal sentinel encoding, where CacheForever is a\nduration of -1ms and NoCaching is 0 \u2014 a schema constraining durations to be non-negative\nwould otherwise reject \"cache forever\".",
+      "properties": {
+        "mode": {
+          "enum": [
+            "time",
+            "forever",
+            "off"
+          ]
+        },
+        "time_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "description": "Only meaningful when mode is \"time\"."
+        }
+      },
+      "type": "object"
+    },
+    "ConsulDataStore": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "default": "localhost:8500",
+          "description": "Consul agent address.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "cache": {
+          "$ref": "#/$defs/Cache"
+        },
+        "mode": {
+          "default": "read_write",
+          "description": "read_write keeps the store current as data arrives. read never writes, which is Relay\nProxy daemon mode.",
+          "enum": [
+            "read",
+            "read_write"
+          ]
+        },
+        "prefix": {
+          "default": "launchdarkly",
+          "type": "string"
+        },
+        "type": {
+          "const": "consul"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "DataStore": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InMemoryDataStore"
+        },
+        {
+          "$ref": "#/$defs/RedisDataStore"
+        },
+        {
+          "$ref": "#/$defs/DynamoDbDataStore"
+        },
+        {
+          "$ref": "#/$defs/ConsulDataStore"
+        }
+      ]
+    },
+    "DataSystem": {
+      "additionalProperties": false,
+      "description": "Ordered initializers run once to seed data; ordered synchronizers then keep it current,\nthe first being primary and later ones acting as fallbacks. Roles are modelled rather than\ntypes, because Java has distinct Initializer and Synchronizer types while .NET reuses\nIDataSource for both.\n\nNot implemented by PHP, Erlang, or Haskell; those SDKs either emulate this tree with FDv1\nprimitives or report the branch as ignored in the support matrix.",
+      "properties": {
+        "data_store": {
+          "$ref": "#/$defs/DataStore"
+        },
+        "endpoints": {
+          "additionalProperties": false,
+          "description": "Overrides service_endpoints for this data system's sources only.",
+          "properties": {
+            "polling": {
+              "$ref": "#/$defs/Uri"
+            },
+            "streaming": {
+              "$ref": "#/$defs/Uri"
+            }
+          },
+          "type": "object"
+        },
+        "fdv1_compatible_synchronizer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PollingSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Data source used when LaunchDarkly directs the SDK back to the FDv1 protocol."
+        },
+        "initializers": {
+          "default": [
+            {
+              "type": "polling"
+            }
+          ],
+          "items": {
+            "$ref": "#/$defs/Initializer"
+          },
+          "type": "array"
+        },
+        "synchronizers": {
+          "default": [
+            {
+              "type": "streaming"
+            },
+            {
+              "type": "polling"
+            }
+          ],
+          "items": {
+            "$ref": "#/$defs/Synchronizer"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DynamoDbDataStore": {
+      "additionalProperties": false,
+      "properties": {
+        "cache": {
+          "$ref": "#/$defs/Cache"
+        },
+        "mode": {
+          "default": "read_write",
+          "description": "read_write keeps the store current as data arrives. read never writes, which is Relay\nProxy daemon mode.",
+          "enum": [
+            "read",
+            "read_write"
+          ]
+        },
+        "prefix": {
+          "default": "",
+          "type": "string"
+        },
+        "table_name": {
+          "description": "Table name. The table must already exist; the SDK does not create it. AWS region and\ncredentials come from the AWS SDK's own resolution chain, not from this document.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "type": {
+          "const": "dynamodb"
+        }
+      },
+      "required": [
+        "table_name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "DynamoDbStore": {
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "default": "",
+          "type": "string"
+        },
+        "table_name": {
+          "default": "PLACEHOLDER",
+          "description": "Table name. The table must already exist; the SDK does not create it. AWS region and\ncredentials come from the AWS SDK's own resolution chain, not from this document.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "type": {
+          "const": "dynamodb"
+        }
+      },
+      "required": [
+        "table_name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Events": {
+      "additionalProperties": false,
+      "properties": {
+        "all_attributes_private": {
+          "default": false,
+          "description": "Redact every context attribute from events. Overrides private_attributes.",
+          "type": "boolean"
+        },
+        "capacity": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 10000,
+          "description": "Maximum events buffered between flushes. Events beyond this are dropped."
+        },
+        "context_keys_capacity": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 1000,
+          "description": "Size of the deduplication cache for context keys in index events."
+        },
+        "context_keys_flush_interval_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 300000
+        },
+        "diagnostic_recording_interval_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "minimum": 60000,
+              "type": "integer"
+            }
+          ],
+          "default": 900000,
+          "description": "Values below 60000 are rejected rather than silently raised."
+        },
+        "enable_gzip": {
+          "default": false,
+          "description": "gzip event payloads before sending.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Go expresses this by swapping SendEvents() for NoEvents() rather than setting a flag.",
+          "type": "boolean"
+        },
+        "flush_interval_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 5000
+        },
+        "omit_anonymous_contexts": {
+          "default": false,
+          "description": "Omit anonymous contexts from index and identify events.",
+          "type": "boolean"
+        },
+        "private_attributes": {
+          "default": [],
+          "description": "Attribute *references*, not plain names: a leading \"/\" makes the value a path, with \"~0\"\nand \"~1\" escaping \"~\" and \"/\" respectively. A value without a leading \"/\" is a literal\ntop-level attribute name.",
+          "items": {
+            "not": {
+              "const": ""
+            },
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "FileSource": {
+      "additionalProperties": false,
+      "description": "Reads flag data from files on disk. Go-only today (ldfiledatav2).",
+      "properties": {
+        "auto_update": {
+          "default": false,
+          "description": "Reload when a file changes. Go models this as a Reloader function, but ldfilewatch.WatchFiles\nis the only implementation that exists, so the capability is a boolean in practice.",
+          "type": "boolean"
+        },
+        "duplicate_keys_handling": {
+          "default": "fail",
+          "description": "What to do when two files define the same flag key.",
+          "enum": [
+            "fail",
+            "ignore"
+          ]
+        },
+        "paths": {
+          "description": "Files to load, in order.",
+          "items": {
+            "not": {
+              "const": ""
+            },
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "file"
+        }
+      },
+      "required": [
+        "paths",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Hook": {
+      "$ref": "#/$defs/TracingHook",
+      "description": "Only first-party type values are enumerated in v1. An unrecognized type parses successfully\nand produces a warning at create time; there is no open provider registry yet."
+    },
+    "Http": {
+      "additionalProperties": false,
+      "description": "Flat, because Go's HTTPConfiguration is flat. Go reuses connect_timeout_ms as the whole-request\ntimeout and has no separate read timeout, so socket_timeout_ms takes its name and default\nfrom Java.",
+      "properties": {
+        "ca_cert_file": {
+          "description": "PEM file holding additional trusted CA certificates. Expressible as data only in Go and\nPython today; other SDKs report it as ignored.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "connect_timeout_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 3000
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional request headers. Go permits these to override Authorization and User-Agent,\nwhich makes this property security-relevant.",
+          "type": "object"
+        },
+        "proxy_url": {
+          "description": "Proxy URI, optionally with credentials: scheme://user:pass@host:port. When unset, the\nSDK honours the conventional http_proxy, https_proxy, and no_proxy variables.",
+          "pattern": "^https?://",
+          "type": "string",
+          "x-ld-sensitive": true
+        },
+        "socket_timeout_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 10000
+        },
+        "user_agent": {
+          "description": "Appended to the SDK's own User-Agent value.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "wrapper_name": {
+          "description": "Identifies a wrapper library built on the SDK. Sent as X-LaunchDarkly-Wrapper.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "wrapper_version": {
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InMemoryDataStore": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "in_memory"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "Initializer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PollingSource"
+        },
+        {
+          "$ref": "#/$defs/FileSource"
+        }
+      ]
+    },
+    "Logging": {
+      "additionalProperties": false,
+      "description": "Rust has no logging configuration at all \u2014 it uses the `log` facade \u2014 so this entire group\nis reported as ignored there.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Go expresses this by swapping Logging() for NoLogging().",
+          "type": "boolean"
+        },
+        "log_context_key_in_errors": {
+          "default": false,
+          "description": "Include the context key in evaluation error messages.",
+          "type": "boolean"
+        },
+        "log_data_source_outage_as_error_after_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 60000,
+          "description": "Escalate a data source outage from WARN to ERROR once it has lasted this long.\nZero disables the escalation."
+        },
+        "log_evaluation_errors": {
+          "default": false,
+          "description": "Log the full evaluation error whenever a flag cannot be evaluated.",
+          "type": "boolean"
+        },
+        "min_level": {
+          "default": "info",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ObservabilityPlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "observability"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "Plugin": {
+      "$ref": "#/$defs/ObservabilityPlugin"
+    },
+    "PollingSource": {
+      "additionalProperties": false,
+      "properties": {
+        "base_uri": {
+          "$ref": "#/$defs/Uri"
+        },
+        "poll_interval_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "minimum": 30000,
+              "type": "integer"
+            }
+          ],
+          "default": 30000,
+          "description": "Interval between polls. Values below 30000 are rejected rather than silently raised."
+        },
+        "type": {
+          "const": "polling"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "RedisDataStore": {
+      "additionalProperties": false,
+      "properties": {
+        "cache": {
+          "$ref": "#/$defs/Cache"
+        },
+        "mode": {
+          "default": "read_write",
+          "description": "read_write keeps the store current as data arrives. read never writes, which is Relay\nProxy daemon mode.",
+          "enum": [
+            "read",
+            "read_write"
+          ]
+        },
+        "prefix": {
+          "default": "launchdarkly",
+          "description": "Prefix for every key the SDK reads or writes.",
+          "type": "string"
+        },
+        "type": {
+          "const": "redis"
+        },
+        "url": {
+          "default": "redis://localhost:6379",
+          "description": "Connection URI. Use the rediss:// scheme for TLS, and embed credentials and database\nnumber in the URI.",
+          "pattern": "^rediss?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "RedisStore": {
+      "additionalProperties": false,
+      "description": "Big segment stores carry no mode or cache; big_segments has its own cache properties.",
+      "properties": {
+        "prefix": {
+          "default": "launchdarkly",
+          "description": "Prefix for every key the SDK reads or writes.",
+          "type": "string"
+        },
+        "type": {
+          "const": "redis"
+        },
+        "url": {
+          "default": "redis://localhost:6379",
+          "description": "Connection URI. Use the rediss:// scheme for TLS, and embed credentials and database\nnumber in the URI.",
+          "pattern": "^rediss?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "ServiceEndpoints": {
+      "additionalProperties": false,
+      "description": "Authoritative for every data source that does not override them. Sources MUST fall back to\nthese values; Go and Ruby currently ignore them under FDv2, which silently sends a Relay\nProxy deployment to production LaunchDarkly.",
+      "properties": {
+        "allow_partial_specification": {
+          "default": false,
+          "description": "Permit specifying some but not all endpoints. Without this, a partial set is an error.",
+          "type": "boolean"
+        },
+        "events": {
+          "$ref": "#/$defs/Uri"
+        },
+        "polling": {
+          "$ref": "#/$defs/Uri"
+        },
+        "relay_proxy": {
+          "$ref": "#/$defs/Uri",
+          "description": "Sets streaming, polling, and events to a single Relay Proxy base URI. Mutually exclusive\nwith the three individual properties."
+        },
+        "streaming": {
+          "$ref": "#/$defs/Uri"
+        }
+      },
+      "type": "object"
+    },
+    "StreamingSource": {
+      "additionalProperties": false,
+      "properties": {
+        "base_uri": {
+          "$ref": "#/$defs/Uri",
+          "description": "Overrides both service_endpoints.streaming and data_system.endpoints.streaming."
+        },
+        "initial_reconnect_delay_ms": {
+          "allOf": [
+            {
+              "type": "number"
+            },
+            {
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "default": 1000,
+          "description": "Base delay before the first reconnection attempt. Subsequent attempts back off."
+        },
+        "type": {
+          "const": "streaming"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "Synchronizer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StreamingSource"
+        },
+        {
+          "$ref": "#/$defs/PollingSource"
+        }
+      ]
+    },
+    "TracingHook": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "description": "LaunchDarkly environment ID, added to emitted spans.",
+          "not": {
+            "const": ""
+          },
+          "type": "string"
+        },
+        "spans": {
+          "default": false,
+          "description": "Emit a span for each variation call.",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "tracing"
+        },
+        "value": {
+          "default": false,
+          "description": "Include the evaluated flag value as a span attribute. Go's WithVariant() is a legacy\nalias of WithValue() and is not part of this schema.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "Uri": {
+      "default": "https://events.launchdarkly.com",
+      "pattern": "^https?://",
+      "type": "string"
+    }
+  },
+  "$id": "https://launchdarkly.com/schemas/sdkconf/v0.1/sdkconf.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "application_info": {
+      "$ref": "#/$defs/ApplicationInfo"
+    },
+    "big_segments": {
+      "$ref": "#/$defs/BigSegments"
+    },
+    "data_system": {
+      "$ref": "#/$defs/DataSystem"
+    },
+    "diagnostic_opt_out": {
+      "default": false,
+      "description": "Suppress SDK diagnostic telemetry. Sits at the root because Go's Config.DiagnosticOptOut\ndoes, even though events.diagnostic_recording_interval_ms is on the events builder.",
+      "type": "boolean"
+    },
+    "events": {
+      "$ref": "#/$defs/Events"
+    },
+    "file_format": {
+      "default": "0.1",
+      "description": "Schema version this document targets. A MINOR version newer than the SDK understands\nproduces a warning; a MAJOR mismatch is an error.",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "type": "string"
+    },
+    "hooks": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Hook"
+      },
+      "type": "array"
+    },
+    "http": {
+      "$ref": "#/$defs/Http"
+    },
+    "logging": {
+      "$ref": "#/$defs/Logging"
+    },
+    "offline": {
+      "default": false,
+      "description": "Disable all network access. Every evaluation returns the application's fallback value.",
+      "type": "boolean"
+    },
+    "plugins": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Plugin"
+      },
+      "type": "array"
+    },
+    "sdk_key": {
+      "description": "Environment credential. Sensitive: redacted from logs, errors, and diagnostic events.\nPrefer \"${LAUNCHDARKLY_SDK_KEY}\" or sdk_key_file over a literal value.",
+      "not": {
+        "const": ""
+      },
+      "type": "string",
+      "x-ld-sensitive": true
+    },
+    "sdk_key_file": {
+      "description": "Path to a file whose entire trimmed contents are the SDK key. Mutually exclusive with\nsdk_key. Intended for Docker and Kubernetes secret mounts.",
+      "not": {
+        "const": ""
+      },
+      "type": "string",
+      "x-ld-sensitive": true
+    },
+    "service_endpoints": {
+      "$ref": "#/$defs/ServiceEndpoints"
+    },
+    "start_wait_ms": {
+      "allOf": [
+        {
+          "type": "number"
+        },
+        {
+          "minimum": 0,
+          "type": "integer"
+        }
+      ],
+      "default": 5000,
+      "description": "How long client construction blocks waiting for the data system to initialize.\nZero does not block. Name and default come from Java; Go takes this as a constructor\nargument rather than a Config field."
+    }
+  },
+  "required": [
+    "file_format"
+  ],
+  "title": "LaunchDarkly server-side SDK declarative configuration (SDKCONF)",
+  "type": "object"
+}

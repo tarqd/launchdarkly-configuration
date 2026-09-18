@@ -207,3 +207,46 @@
       over: `diagnostic_opt_out` at the root while `diagnostic_recording_interval_ms` is under
       `events`; `service_endpoints` rather than `endpoints`; `application_info` rather than
       `application`.
+
+## Round 9
+23. **The three awkward naming outcomes stand.** `diagnostic_opt_out` stays at the root while
+    `events.diagnostic_recording_interval_ms` stays under `events`; the group is
+    `service_endpoints`, not `endpoints`; the group is `application_info`, not `application`.
+    Go dictates all three and Go is the reference. Recorded in
+    [`NAMING.md`](NAMING.md#three-places-the-rule-produces-something-awkward) so a future reader
+    knows they were chosen rather than overlooked.
+
+## Implementation notes from building the schema
+
+Four things surfaced while turning the decisions into a working schema. None changes a decision;
+all four are worth knowing before writing a loader.
+
+- **CUE's JSON Schema exporter carries types, constraints, enums, and doc comments, but not
+  default values.** Since decision 4 makes the schema the owner of every default, defaults are
+  written as a separate CUE document and injected into the generated JSON Schema by `gen.py`.
+  That turned out to be a feature rather than a workaround: `cue export` also emits
+  `defaults.json`, the canonical materialized model that Requirement 1.4.3 requires, which an
+  SDK can embed directly or test against.
+
+- **`allOf` and `additionalProperties: false` do not compose.** The first draft modelled a data
+  store as common fields (`mode`, `cache`) unified with a `type`-discriminated variant. In JSON
+  Schema, `additionalProperties: false` only sees the properties declared in the branch it
+  appears in, so each branch rejected the other's keys and no document validated. Decision 9
+  needs closed objects, so each variant is now a single flat closed object, with the shared
+  field sets kept DRY in CUE as plain (non-definition) structs that unify before closing.
+  This also made the model more correct: an in-memory store has neither a mode nor a cache.
+
+- **Discriminated unions degrade error quality, which Requirement 1.6.4 cares about.** A
+  validator reports a failure inside a `type`-discriminated union at the union node, not at the
+  offending leaf, with the branch errors nested. Recovering the leaf pointer means selecting the
+  branch whose discriminator matched and descending into its errors — which is what
+  `run_vectors_support.pointers_for` does, and what an SDK will have to do too. Separately, CUE
+  collapses a definition whose only field is a required constant into a whole-object `const`,
+  which erases property-level errors entirely; `gen.py` expands those back into ordinary closed
+  objects.
+
+- **Three mutual-exclusion requirements are not yet in the schema.** Requirements 1.7.6
+  (`relay_proxy` with an individual endpoint), 1.8.6 (`data_system` with a deprecated property),
+  and 1.10.3 (`sdk_key` with `sdk_key_file`) are normative but currently prose-only. All three
+  are expressible with `not`/`dependentSchemas`; tracked in the test-vectors README as schema
+  work rather than as specification changes.

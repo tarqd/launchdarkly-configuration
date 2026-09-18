@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "description": "An absent event capacity materializes the schema default, not the SDK's own",
+      "document": {"file_format": "0.1"},
+      "expect": {"model": {"/events/capacity": 10000}}
+    },
+    {
+      "description": "An absent polling endpoint materializes app.launchdarkly.com",
+      "document": {"file_format": "0.1"},
+      "expect": {"model": {"/service_endpoints/polling": "https://app.launchdarkly.com"}}
+    },
+    {
+      "description": "An absent gzip setting materializes false, matching Go rather than Rust",
+      "document": {"file_format": "0.1"},
+      "expect": {"model": {"/events/enable_gzip": false}}
+    },
+    {
+      "description": "An absent start wait materializes 5000, matching Java rather than .NET",
+      "document": {"file_format": "0.1"},
+      "expect": {"model": {"/start_wait_ms": 5000}}
+    },
+    {
+      "description": "An absent socket timeout materializes 10000, taken from Java because Go has none",
+      "document": {"file_format": "0.1"},
+      "expect": {"model": {"/http/socket_timeout_ms": 10000}}
+    },
+    {
+      "description": "An explicit value overrides the schema default",
+      "document": {"file_format": "0.1", "events": {"capacity": 250}},
+      "expect": {"model": {"/events/capacity": 250}}
+    },
+    {
+      "description": "The default data system is a polling initializer with streaming then polling synchronizers",
+      "document": {"file_format": "0.1"},
+      "expect": {
+        "model": {
+          "/data_system/initializers/0/type": "polling",
+          "/data_system/synchronizers/0/type": "streaming",
+          "/data_system/synchronizers/1/type": "polling"
+        }
+      }
+    }
+  ]
+}

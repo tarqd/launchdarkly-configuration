@@ -1,0 +1,59 @@
+{
+  "data_system": {
+    "data_store": {
+      "type": "in_memory"
+    },
+    "fdv1_compatible_synchronizer": {
+      "type": "polling"
+    },
+    "initializers": [
+      {
+        "type": "polling"
+      }
+    ],
+    "synchronizers": [
+      {
+        "type": "streaming"
+      },
+      {
+        "type": "polling"
+      }
+    ]
+  },
+  "diagnostic_opt_out": false,
+  "events": {
+    "all_attributes_private": false,
+    "capacity": 10000,
+    "context_keys_capacity": 1000,
+    "context_keys_flush_interval_ms": 300000,
+    "diagnostic_recording_interval_ms": 900000,
+    "enable_gzip": false,
+    "enabled": true,
+    "flush_interval_ms": 5000,
+    "omit_anonymous_contexts": false,
+    "private_attributes": []
+  },
+  "file_format": "0.1",
+  "hooks": [],
+  "http": {
+    "connect_timeout_ms": 3000,
+    "headers": {},
+    "socket_timeout_ms": 10000
+  },
+  "logging": {
+    "enabled": true,
+    "log_context_key_in_errors": false,
+    "log_data_source_outage_as_error_after_ms": 60000,
+    "log_evaluation_errors": false,
+    "min_level": "info"
+  },
+  "offline": false,
+  "plugins": [],
+  "service_endpoints": {
+    "allow_partial_specification": false,
+    "events": "https://events.launchdarkly.com",
+    "polling": "https://app.launchdarkly.com",
+    "streaming": "https://stream.launchdarkly.com"
+  },
+  "start_wait_ms": 5000
+}
