@@ -186,3 +186,24 @@
     apply, and so cross-referencing from sdk-specs works.
     Trade-off accepted: lives outside the squad's spec index.
     Proposed spec id: `SDKCONF`.
+
+## Round 8
+22. **Property naming**: **Go is the reference for names**, as it already is for defaults
+    (decision 14). Fall to Java, then Python, where Go has no equivalent.
+    Full derivation, the six rules, and every property's Go source are in
+    [`spec/NAMING.md`](NAMING.md).
+    Notable outcomes:
+    - Go's **builder API** wins over Go's **diagnostic-event field names**: the builder says
+      `ContextKeysCapacity` while the diagnostic payload still emits legacy `userKeysCapacity`,
+      so the spec says `context_keys_capacity`.
+    - `socket_timeout_ms` comes from Java - Go has no separate read timeout at all, reusing
+      `ConnectTimeout` as the whole-request timeout.
+    - `start_wait_ms` comes from Java - Go takes `waitFor` as a constructor argument.
+    - `sdk_key` comes from Python - neither Go nor Java has a config-level setter.
+    - `application.name` / `version_name` are **dropped from v1**: .NET-only, so they fall
+      through Go -> Java -> Python and land nowhere.
+    - `payload_filter` is **dropped from v1**: deprecated on Go's FDv2 builders, absent in .NET.
+    - Three places the rule produces something awkward, flagged for veto rather than smoothed
+      over: `diagnostic_opt_out` at the root while `diagnostic_recording_interval_ms` is under
+      `events`; `service_endpoints` rather than `endpoints`; `application_info` rather than
+      `application`.

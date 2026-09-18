@@ -1,10 +1,8 @@
 # Illustrative only — NOT NORMATIVE.
 #
-# This file shows the document shape implied by spec/DECISIONS.md so the design can be
-# sanity-checked before the specification and JSON Schema are written. Property names,
-# groupings, and default values will change as SDKCONF is drafted. Canonical defaults are
-# derived from the Go SDK, falling back to Java then Python (decision 14); the values shown
-# here have not yet been through that pass.
+# Shows the document shape implied by spec/DECISIONS.md, with every property name derived from
+# the Go SDK's public API per spec/NAMING.md. Default values shown are Go's actuals where Go has
+# the option; they still need a full per-property pass.
 
 # Required. MINOR newer than the SDK understands warns; MAJOR mismatch is an error.
 file_format: "0.1"
@@ -15,26 +13,34 @@ sdk_key: ${LAUNCHDARKLY_SDK_KEY}
 # sdk_key_file: /run/secrets/launchdarkly-sdk-key
 
 offline: false
+
+# Go passes this to MakeCustomClient rather than holding it in Config, so the name comes from
+# Java's startWait. Go, Python, and Ruby need new API for it to be settable from a document.
 start_wait_ms: 5000
 
-application:
+# Root-level because that is where Go's Config.DiagnosticOptOut lives, even though
+# events.diagnostic_recording_interval_ms sits on the events builder. See NAMING.md.
+diagnostic_opt_out: false
+
+application_info:
   id: checkout-service
   version: ${GIT_SHA}
 
 # Authoritative for every data source that does not override them. An SDK MUST fall back to
-# these when a source omits its own endpoint — this is what Go and Ruby get wrong under FDv2
-# today. Specifying some but not all endpoints is an error, not a warn-and-default.
-endpoints:
-  polling: https://app.launchdarkly.com
+# these when a source omits its own — this is what Go and Ruby get wrong under FDv2 today.
+# Specifying some but not all is an error unless allow_partial_specification is set.
+service_endpoints:
   streaming: https://stream.launchdarkly.com
+  polling: https://app.launchdarkly.com
   events: https://events.launchdarkly.com
+  allow_partial_specification: false
   # Shorthand that sets all three, for Relay Proxy deployments:
   # relay_proxy: https://relay.internal.example.com
 
-# The FDv2 data system is the primary shape: ordered initializers, then ordered synchronizers.
-# Roles are modelled, not types (Java has distinct Initializer/Synchronizer types; .NET reuses
-# IDataSource). Legacy `stream` / `poll_interval` / `use_ldd` / `persistent_store` exist as
-# deprecated top-level aliases mapped onto this tree, and are mutually exclusive with it.
+# Ordered initializers, then ordered synchronizers. Roles are modelled, not types — Java has
+# distinct Initializer/Synchronizer types while .NET reuses IDataSource. Legacy top-level
+# stream / poll_interval / use_ldd / persistent_store are deprecated aliases onto this tree and
+# are mutually exclusive with it.
 data_system:
   initializers:
     - type: polling
@@ -43,14 +49,18 @@ data_system:
       initial_reconnect_delay_ms: 1000
     - type: polling
       poll_interval_ms: 30000
-  persistent_store:
+  fdv1_compatible_synchronizer:
+    type: polling
+  data_store:
+    mode: read_write # read | read_write
     type: redis
     url: redis://localhost:6379
     prefix: launchdarkly
-    # An explicit mode rather than the negative-duration sentinel Java/.NET/C++ use internally.
+    # Explicit mode instead of Go's internal sentinels, where CacheForever is -1ms and
+    # NoCaching is 0 — a non-negative duration constraint would otherwise reject "forever".
     cache:
-      mode: ttl # off | ttl | infinite
-      ttl_ms: 15000
+      mode: time # time | forever | off
+      time_ms: 15000
 
 events:
   enabled: true
@@ -63,18 +73,19 @@ events:
     - /address/street
   context_keys_capacity: 1000
   context_keys_flush_interval_ms: 300000
-  compress: false
-  diagnostics:
-    enabled: true
-    recording_interval_ms: 900000
+  omit_anonymous_contexts: false
+  enable_gzip: false
+  diagnostic_recording_interval_ms: 900000
 
+# Flat, because Go's HTTPConfiguration is flat — no nested proxy or tls objects.
 http:
   connect_timeout_ms: 3000
+  # Go has no separate read timeout; this name comes from Java's socketTimeout.
   socket_timeout_ms: 10000
-  proxy:
-    url: http://proxy.internal.example.com:3128
-  tls:
-    ca_file: /etc/ssl/certs/corp-ca.pem
+  proxy_url: http://proxy.internal.example.com:3128
+  # Expressible as data in Go and Python only; nine SDKs would need new API.
+  ca_cert_file: /etc/ssl/certs/corp-ca.pem
+  # Go permits overriding Authorization and User-Agent here, which makes this security-relevant.
   headers:
     X-Corp-Trace: enabled
 
@@ -84,18 +95,23 @@ big_segments:
     url: redis://localhost:6379
     prefix: launchdarkly
   context_cache_size: 1000
-  context_cache_ttl_ms: 5000
+  context_cache_time_ms: 5000
   status_poll_interval_ms: 5000
   stale_after_ms: 120000
 
 logging:
-  level: info # Rust has no logging configuration; it warns once and ignores this.
+  enabled: true
+  min_level: info # Rust has no logging configuration; it warns once and ignores this group.
+  log_evaluation_errors: false
+  log_context_key_in_errors: false
+  log_data_source_outage_as_error_after_ms: 60000
 
 # Only first-party `type` values are enumerated in v1. An unrecognised `type` parses
 # successfully and warns at create time — there is no open provider registry yet.
 hooks:
   - type: tracing
-    include_value: false
+    spans: true
+    value: false
 
 plugins:
   - type: observability
